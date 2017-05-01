@@ -1,0 +1,68 @@
+# Experimental Double Gauss lens from Zemax
+# http://www.schott.com/advanced_optics/us/abbe_datasheets/schott_datasheet_all_us.pdf
+# nd values
+# N-SK2 1.60738
+# N-SK16 1.62032
+# F5 1.60342
+# inf 10000
+# last surface aperture 53.09764
+# Result from Zemax -> Reports -> 
+# GENERAL LENS DATA:
+# 
+# Surfaces                :               12
+# Stop                    :                6
+# System Aperture         : Entrance Pupil Diameter = 33.33
+# Glass Catalogs          : SCHOTT
+# Ray Aiming              : Off
+# Apodization             : Uniform, factor =   0.00000E+000
+# Temperature (C)         :    2.00000E+001
+# Pressure (ATM)          :    1.00000E+000
+#  Adjust Index Data To Environment  : Off
+# Effective Focal Length  :        99.50068 (in air at system temperature and pressure)
+# Effective Focal Length  :        99.50068 (in image space)
+# Back Focal Length       :        57.49797
+# Total Track             :        132.9884
+# Image Space F/#         :        2.985319
+# Paraxial Working F/#    :        2.985319
+# Working F/#             :        2.978283
+# Image Space NA          :       0.1651855
+# Object Space NA         :     1.6665e-009
+# Stop Radius             :        9.996598
+# Paraxial Image Height   :        24.80831
+# Paraxial Magnification  :               0
+# Entrance Pupil Diameter :           33.33
+# Entrance Pupil Position :        58.93976
+# Exit Pupil Diameter     :        36.25844
+# Exit Pupil Position     :       -108.0596
+# Field Type              : Angle in degrees
+# Maximum Radial Field    :              14
+# Primary Wavelength      :          0.5876 µm
+# Lens Units              :   Millimeters
+# Angular Magnification   :       0.9192343
+# 
+# 54.153, 8.747, 1.60738, nan, 60.51231
+# 152.522, 0.5, 1.0, nan, 58.57756
+# 35.951, 14.0, 1.62032, nan, 49.83272
+# 100000, 3.777, 1.60342, nan, 44.2466
+# 22.270, 14.253, 1.0, nan, 30.34894
+# nan, 12.428, 1.0, nan, 20.45767
+# -25.685, 3.777, 1.60342, nan, 27.17426
+# -100000, 10.834, 1.62032, nan, 34.47795
+# -36.98, 0.5, 1.0, nan, 39.35164
+# 196.417, 6.858, 1.62032, nan, 45.0498
+# -67.148, 57.305, nan, nan, 45.59799
+
+54.15325 ,      8.746658 ,     1.60738, nan,     58.4506
+152.5219 ,           0.5 ,         1.0, nan,     56.28191 
+35.95062 ,            14 ,     1.62032, nan,     48.59162 
+100000,         3.776966 ,     1.60342, nan,     42.59438         
+22.26992 ,      14.25306 ,         1.0, nan,     29.83871             
+nan,            12.42813 ,         1.0, nan,     20.45767               
+-25.68503 ,      3.776966,     1.60342, nan,     26.37552                
+-100000,        10.83393 ,     1.62032, nan,     32.93624                
+-36.98022  ,        0.5  ,         1.0, nan,     37.85914                
+196.4173  ,     6.858175 ,     1.62032, nan,     42.62153                 
+-67.14755  ,   57.31454  ,         1.0, nan,     43.29252 
+
+# IMA STANDARD       Infinity                      49.14107              
+

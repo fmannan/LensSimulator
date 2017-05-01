@@ -1,0 +1,63 @@
+# Experimental Double Gauss lens from Zemax
+# http://www.schott.com/advanced_optics/us/abbe_datasheets/schott_datasheet_all_us.pdf
+# nd values
+# N-SK2 1.60738
+# N-SK16 1.62032
+# F5 1.60342
+# inf 10000
+# last surface aperture 53.09764
+# Result from Zemax -> Reports -> 
+# GENERAL LENS DATA:
+# Surfaces                :               13
+# Stop                    :                7
+# System Aperture         : Float By Stop Size = 10.2288
+# Glass Catalogs          : SCHOTT
+# Ray Aiming              : Paraxial Reference, Cache On
+#  X Pupil shift          :               0
+#  Y Pupil shift          :               0
+#  Z Pupil shift          :               0
+#  X Pupil compress       :               0
+#  Y Pupil compress       :               0
+# Apodization             : Uniform, factor =   0.00000E+000
+# Temperature (C)         :    2.00000E+001
+# Pressure (ATM)          :    1.00000E+000
+#  Adjust Index Data To Environment  : Off
+# Effective Focal Length  :        81.20869 (in air at system temperature and pressure)
+# Effective Focal Length  :        81.20869 (in image space)
+# Back Focal Length       :       -23.30523
+# Total Track             :         142.979
+# Image Space F/#         :       0.7396019
+# Paraxial Working F/#    :         2.91754
+# Working F/#             :         2.89669
+# Image Space NA          :       0.1689147
+# Object Space NA         :       0.1680952
+# Stop Radius             :        10.22884
+# Paraxial Image Height   :        26.86518
+# Paraxial Magnification  :      -0.9950068
+# Entrance Pupil Diameter :        109.8005
+# Entrance Pupil Position :         221.955
+# Exit Pupil Diameter     :        37.10078
+# Exit Pupil Position     :       -108.0502
+# Field Type              : Object height in Millimeters
+# Maximum Radial Field    :              27
+# Primary Wavelength      :          0.5876 µm
+# Lens Units              :   Millimeters
+# Angular Magnification   :        2.959521
+# ------
+# EFFL : 81.2087
+# WFNO : 2.89669
+# ENPD : 109.801
+# TOTR : 142.979
+
+54.153, 8.747, 1.60738, nan, 60.51231
+152.522, 0.5, 1.0, nan, 58.57756
+35.951, 14.0, 1.62032, nan, 49.83272
+100000, 3.777, 1.60342, nan, 44.2466
+22.270, 14.253, 1.0, nan, 30.34894
+nan, 12.428, 1.0, nan, 20.45767
+-25.685, 3.777, 1.60342, nan, 27.17426
+-100000, 10.834, 1.62032, nan, 34.47795
+-36.98, 0.5, 1.0, nan, 39.35164
+196.417, 6.858, 1.62032, nan, 45.0498
+-67.148, 57.305, nan, nan, 45.59799
+

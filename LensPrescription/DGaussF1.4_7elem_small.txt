@@ -1,0 +1,33 @@
+﻿# Almost the same as DGaussF1.4_7elem.txt but with 1/2 the aperture stop
+# Modern optical engineering 
+# Fig 19.38 P. 571
+# F/1.4 Split-Front Doublet 7-Element Double Gauss. Recent Double Gauss
+# camera lenses have advantageously air-spaced the front doublet of the splitrear
+# crown version of the Double Gauss. Many of the newer designs for camera
+# lenses follow this configuration.
+# F/1.4 23.8Degs HFOV D-Gauss US 3,851,953/1974 Nakagawa
+# radius thickness mat’1 index V-no sa
+#
+# EFL = 99.77
+# BFL = 73.8
+# NA = –0.3531 (F/1.40)
+# GIH = 43.90 (HFOV = 23.75)
+# PTZ = –6.057
+# VL = 82.73
+# OD infinite conjugate
+
+# radius thickness index Vno sa
+78.186, 8.862, 1.835, 42.7, 36.4
+259.846, 0.232, nan, nan, 36.4
+42.498, 8.784, 1.808, 40.6, 31.5
+60.180, 3.436, nan, nan, 30.8
+69.416, 2.606, 1.785, 26.1, 28.7
+28.654, 16.888, nan, nan, 23.7
+nan, 14.000, nan, nan, 11.8
+-31.582, 2.646, 1.785, 26.1, 23.5
+-99.808, 9.982, 1.808, 40.6, 29.7
+-52.702, 0.192, nan, nan, 29.7
+-150.994, 9.692, 1.713, 53.8, 31.9
+-50.290, 0.232, nan, nan, 31.9
+338.224, 5.174, 1.713, 53.8, 30.0
+-186.406, 73.796, nan, nan, 30.0
