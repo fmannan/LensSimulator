@@ -19,7 +19,7 @@ public:
     void setParams(const glm::vec3& origin, const glm::vec3& direction)
     {
         mOrigin = origin;
-        mDirection = glm::normalize(direction);
+        mDirection = glm::dot(direction, direction) > 0 ? glm::normalize(direction) : glm::vec3(0.0f);
     }
 
     void setOrigin(const glm::vec3& origin) { mOrigin = origin; }

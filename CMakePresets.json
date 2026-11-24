@@ -1,0 +1,26 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "desktop",
+      "displayName": "Optional Qt desktop viewer",
+      "binaryDir": "${sourceDir}/build/desktop",
+      "cacheVariables": { "LENS_BUILD_QT": "ON", "BUILD_TESTING": "ON" }
+    },
+    {
+      "name": "headless",
+      "displayName": "Portable numerical libraries and tests without Qt",
+      "binaryDir": "${sourceDir}/build/headless",
+      "cacheVariables": { "LENS_BUILD_QT": "OFF", "BUILD_TESTING": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "desktop", "configurePreset": "desktop", "configuration": "Release" },
+    { "name": "headless", "configurePreset": "headless", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "desktop", "configurePreset": "desktop", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "headless", "configurePreset": "headless", "configuration": "Release", "output": { "outputOnFailure": true } }
+  ]
+}

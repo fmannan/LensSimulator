@@ -4,9 +4,9 @@ Ray::Ray(void) : mOrigin(0.0), mDirection(0.0)
 {
 }
 
-Ray::Ray(const glm::vec3& origin, const glm::vec3& dir) : mOrigin(origin), mDirection(glm::normalize(dir)) {}
+Ray::Ray(const glm::vec3& origin, const glm::vec3& dir) { setParams(origin, dir); }
 
-Ray::Ray(glm::vec3&& origin, glm::vec3&& dir) : mOrigin(origin), mDirection(glm::normalize(dir)) {}
+Ray::Ray(glm::vec3&& origin, glm::vec3&& dir) { setParams(origin, dir); }
 
 Ray::RayIntersectionType Ray::intersection(const Ray& rhs, glm::vec3& intersection_point) const
 {

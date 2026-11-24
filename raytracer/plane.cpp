@@ -20,7 +20,9 @@ bool Plane::intersection(const Ray& ray, glm::vec3& pos, glm::vec3& normal) cons
 {
     using namespace glm;
     // TODO: TEST CODE
-    float t = dot(mNormal, mV - ray.origin()) / dot(mNormal, ray.direction());
+    float denominator = dot(mNormal, ray.direction());
+    if (std::abs(denominator) < 1e-12f) return false;
+    float t = dot(mNormal, mV - ray.origin()) / denominator;
     pos = ray.origin() + ray.direction() * t;
     normal = mNormal;
     if(t < EPS_DISTANCE) return false;

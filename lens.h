@@ -1,7 +1,8 @@
 #ifndef LENS_H
 #define LENS_H
 #include <vector>
-#include <QString>
+#include <filesystem>
+#include <istream>
 #include <ray.h>
 #include <plane.h>
 #include <glm.hpp>
@@ -32,7 +33,7 @@ private:
     void updateEdgeAndCenter()
     {
         mEdgePos = glm::vec3(0.0f, 0.0f, mOffsetLens);
-        if(std::isnan(mRadius)) {
+        if(!std::isfinite(mRadius)) {
             mCenter = mEdgePos;
         } else {
 //            // if radius is negative then the lens is concave and the thickness is in the negative direction
@@ -111,9 +112,10 @@ class Lens
     // The cross-section is the x-y plane and the thickness is along the x-axis, up is the y-axis.
 public:
     Lens();
-    Lens(const QString& filename);
+    explicit Lens(const std::filesystem::path& filename);
 
-    void load(const QString& filename);
+    void load(const std::filesystem::path& filename);
+    void load(std::istream& input);
     //void add(LensElement elem);
 
     void findExitPupil(double& z, double& aperture);    // returns position and size of the exit pupil
@@ -152,7 +154,9 @@ public:
 
     std::vector<glm::vec3> getSamplesOnRearSurface() const;
     std::vector<glm::vec3> get2DSamplesOnRearSurface(int nSamples = 10) const;
-    double thickness() const { return mLensThickness; }   // total thickness of the lens (end to end distance)
+    double thickness() const { return mLensThickness; }   // includes final sensor spacing, in mm
+    bool empty() const { return mElems.empty(); }
+    std::size_t surfaceCount() const { return mElems.size(); }
     const LensPrescription::const_iterator cbegin() const { return mElems.cbegin(); }
     const LensPrescription::const_iterator cend() const { return mElems.cend(); }
 private:

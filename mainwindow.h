@@ -1,44 +1,26 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
-
 #include <QMainWindow>
 #include "lensprofileview.h"
-#include "lens.h"
+#include "core/lensanalysis.h"
+class QDoubleSpinBox;
+class QLabel;
+class QPushButton;
+class QTableWidget;
 
-namespace Ui {
-class MainWindow;
-}
-
-class MainWindow : public QMainWindow
-{
+class MainWindow : public QMainWindow {
     Q_OBJECT
-
 public:
-    explicit MainWindow(QWidget *parent = 0);
-    ~MainWindow();
-	void saveSVG();
-
-private slots:
-    void on_action_Open_triggered();
-    void wheelEvent(QWheelEvent *event);
-    void mouseMoveEvent(QMouseEvent *event);
-    void mousePressEvent(QMouseEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
-
-    void on_action_Editor_toggled(bool arg1);
-
-    void on_action_Console_toggled(bool arg1);
-    void consoleClose(QCloseEvent* );
-
+    explicit MainWindow(QWidget* parent = nullptr);
+    bool loadPrescription(const QString& path);
+    bool analyze();
+    bool exportSvg(const QString& path);
 private:
-    Ui::MainWindow *ui;
-    LensProfileView mLensProfileView;
     Lens mLens;
-
-    QPoint mPanLastPos;
-    bool   mBoolPanningState;   // if true then scene pans as the mouse moves
-
-	QString mPath;
+    LensProfileView* mView;
+    QDoubleSpinBox *mBeam, *mLower, *mUpper;
+    QLabel* mResults;
+    QPushButton* mAnalyze;
+    QTableWidget* mTable;
 };
-
-#endif // MAINWINDOW_H
+#endif

@@ -1,98 +1,24 @@
 #include "mainwindow.h"
 #include <QApplication>
-#include <ray.h>
-#include <QDebug>
+#include <QCommandLineParser>
+#include <QFileInfo>
 
-void testRayIntersection()
-{
-    Ray r1, r2;
-
-    glm::vec3 ip;
-    Ray::RayIntersectionType status;
-    glm::vec3 dir, n;
-
-    qDebug() << "testing YZ plane";
-
-    r1 = Ray(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    r2 = Ray(glm::vec3(0.0f, 2.0f, 2.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-
-    r1 = Ray(glm::vec3(10.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    r2 = Ray(glm::vec3(10.0f, 2.0f, 2.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 2.0f, 0.0f), glm::vec3(0.0f, -1.0f, 1.0f));
-    r2 = Ray(glm::vec3(0.0f, -2.0f, 0.0f), glm::vec3(0.0f, 1.0f, 1.0f));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0  ,  17.0215  ,  19.4149), glm::vec3(0  ,  -0.213445  ,  0.976955));
-    r2 = Ray(glm::vec3(0  ,  -17.0215  ,  19.4149), glm::vec3(0  ,  0.213445  ,  0.976955));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-    dir = ip - r1.origin();
-    n = glm::cross(dir, r1.direction());
-    qDebug() << glm::dot(n, n);
-
-    qDebug() << "testing XY plane";
-
-    r1 = Ray(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    r2 = Ray(glm::vec3(2.0f, 2.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    r2 = Ray(glm::vec3(2.0f, 2.0f, 10.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 2.0f, 1.0f), glm::vec3(1.0f, -1.0f, 0.0f));
-    r2 = Ray(glm::vec3(0.0f, -2.0f, 1.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 2.0f, 1.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-    r2 = Ray(glm::vec3(0.0f, -2.0f, 1.0f), glm::vec3(1.0f, -1.0f, 0.0f));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 2.0f, 2.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-    r2 = Ray(glm::vec3(0.0f, -2.0f, 1.0f), glm::vec3(1.0f, -1.0f, 0.0f));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-    r1 = Ray(glm::vec3(0.0f, 2.0f, 1.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-    r2 = Ray(glm::vec3(0.0f, -2.0f, 1.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-    status = r1.intersection(r2, ip);
-    qDebug() << status;
-    qDebug() << ip.x << " , " << ip.y << " , " << ip.z;
-
-
-}
-
-int main(int argc, char *argv[])
-{
-    QApplication a(argc, argv);
-    MainWindow w;
-    w.show();
-    // perform ray intersection test
-    testRayIntersection();
-
-    return a.exec();
+int main(int argc, char* argv[]) {
+    QApplication app(argc, argv);
+    QApplication::setApplicationName("LensSimulator");
+    QApplication::setApplicationVersion("0.2.0");
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Lens prescription viewer and focus optimizer");
+    parser.addHelpOption(); parser.addVersionOption();
+    parser.addPositionalArgument("prescription", "Optional lens prescription file", "[prescription]");
+    parser.process(app);
+    if (parser.positionalArguments().size() > 1) parser.showHelp(2);
+    MainWindow window;
+    if (!parser.positionalArguments().isEmpty()) window.loadPrescription(parser.positionalArguments().front());
+    else {
+        const auto sample = QApplication::applicationDirPath() + "/LensPrescription/lens0.txt";
+        if (QFileInfo::exists(sample)) window.loadPrescription(sample);
+    }
+    window.show();
+    return app.exec();
 }

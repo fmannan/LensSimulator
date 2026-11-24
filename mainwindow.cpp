@@ -1,240 +1,142 @@
 #include "mainwindow.h"
-#include "ui_mainwindow.h"
-#include <iostream>
-#include <sstream>
-#include <exception>
-#include <stdexcept>
+#include <QAction>
+#include <QApplication>
+#include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
-#include <QWheelEvent>
-#include <QTableView>
-#include <QtSvg>
+#include <QFileInfo>
+#include <QFormLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QMenuBar>
+#include <QPainter>
+#include <QPushButton>
+#include <QStatusBar>
 #include <QSvgGenerator>
-#include <QDebug>
+#include <QTableWidget>
+#include <QToolBar>
+#include <QVBoxLayout>
 
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent), mLensProfileView(&mLens, parent),
-    ui(new Ui::MainWindow), mBoolPanningState(false)
-{
-    ui->setupUi(this);
-    setCentralWidget(&mLensProfileView);
-    ui->statusBar->showMessage(tr("Ready"));
-
-    ui->dockWidgetEditorView->hide();
-    ui->action_Editor->setChecked(false);
-    ui->tableViewLensEditor->showGrid();
-
-    ui->action_Console->setChecked(false);
-    connect(ui->dockWidgetConsole, SIGNAL(closeEvent()), SLOT(closeConsole));
-    ui->dockWidgetConsole->hide();
-    //QStandardItemModel *model = new QStandardItemModel(2, 3, this);
-
+namespace {
+QDoubleSpinBox* distanceControl(const char* name, double minimum, double maximum, double value, QWidget* parent) {
+    auto box = new QDoubleSpinBox(parent);
+    box->setObjectName(name); box->setRange(minimum, maximum); box->setDecimals(4);
+    box->setSuffix(" mm"); box->setValue(value); return box;
 }
-
-MainWindow::~MainWindow()
-{
-    delete ui;
+std::filesystem::path nativePath(const QString& path) {
+#ifdef _WIN32
+    return std::filesystem::path(path.toStdWString());
+#else
+    return std::filesystem::path(path.toUtf8().constData());
+#endif
 }
-
-void MainWindow::saveSVG()
-{  // TODO: ADD saveSVG() options from doc.qt.io/qt-5/qtsvg-svggenerator-example.html
-	QString newPath = QFileDialog::getSaveFileName(this, tr("Save SVG"), mPath, tr("SVG files (*.svg)"));
-
-	if (newPath.isEmpty())
-		return;
-
-	mPath = newPath;
-
-	QSvgGenerator generator;
-	generator.setFileName(mPath);
-	generator.setSize(QSize(200, 200));
-	generator.setViewBox(QRect(0, 0, 200, 200));
-	generator.setTitle(tr("QtLensSimulator"));
-	generator.setDescription(tr("QtLensSimulator created lens drawing"));
-
-	QPainter painter;
-	painter.begin(&generator);
-	mLensProfileView.paint(painter);
-	painter.end();
 }
+MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
+    setWindowTitle(tr("Lens Simulator")); resize(1280, 820);
+    mView = new LensProfileView(this); setCentralWidget(mView);
+    auto file = menuBar()->addMenu(tr("&File"));
+    auto open = file->addAction(tr("&Open prescription...")); open->setShortcut(QKeySequence::Open);
+    connect(open, &QAction::triggered, this, [this] {
+        auto path = QFileDialog::getOpenFileName(this, tr("Open lens prescription"),
+            QApplication::applicationDirPath() + "/LensPrescription", tr("Lens prescriptions (*.txt *.TXT);;All files (*)"));
+        if (!path.isEmpty()) loadPrescription(path);
+    });
+    auto save = file->addAction(tr("Export &SVG..."));
+    connect(save, &QAction::triggered, this, [this] {
+        auto path = QFileDialog::getSaveFileName(this, tr("Export lens view"), "lens.svg", tr("SVG files (*.svg)"));
+        if (!path.isEmpty()) exportSvg(path);
+    });
+    auto toolbar = addToolBar(tr("Lens tools")); toolbar->addAction(open); toolbar->addAction(save);
+    auto reset = toolbar->addAction(tr("Reset view"));
+    connect(reset, &QAction::triggered, mView, &LensProfileView::resetView);
 
-void MainWindow::on_action_Open_triggered()
-{
-    std::stringstream stream;
-    ui->statusBar->showMessage(tr("Open Lens Prescription ..."), 1000);
-    ui->textEditConsole->append(tr("Open Lens Prescription ..."));
+    auto dock = new QDockWidget(tr("Focus analysis"), this); dock->setObjectName("analysisDock");
+    auto panel = new QWidget(dock); auto layout = new QVBoxLayout(panel);
+    auto description = new QLabel(tr("Collimated on-axis beam\nGeometric tracing + core RMS optimizer"), panel);
+    layout->addWidget(description);
+    auto form = new QFormLayout;
+    mBeam = distanceControl("beamDiameter", 0.01, 10000, 2, panel);
+    mLower = distanceControl("focusLower", 0, 1e6, 1, panel);
+    mUpper = distanceControl("focusUpper", 0, 1e6, 200, panel);
+    form->addRow(tr("Beam diameter"), mBeam);
+    form->addRow(tr("Focus lower bound"), mLower);
+    form->addRow(tr("Focus upper bound"), mUpper);
+    layout->addLayout(form);
+    auto boundsNote = new QLabel(tr("Focus distances are measured from the last surface vertex.\nIndices are prescription values; dispersion is not modeled."), panel);
+    boundsNote->setWordWrap(true); layout->addWidget(boundsNote);
+    mAnalyze = new QPushButton(tr("Optimize image plane"), panel);
+    mAnalyze->setObjectName("analyzeButton"); mAnalyze->setEnabled(false);
+    connect(mAnalyze, &QPushButton::clicked, this, [this] { analyze(); }); layout->addWidget(mAnalyze);
+    mResults = new QLabel(tr("Open a prescription to analyze its focus."), panel);
+    mResults->setObjectName("analysisResults"); mResults->setWordWrap(true);
+    mResults->setTextInteractionFlags(Qt::TextSelectableByMouse); layout->addWidget(mResults);
+    auto invalidate = [this] {
+        if (mLens.empty()) return;
+        mResults->setText(tr("Parameters changed. Optimize the image plane to update results."));
+        mView->setRays({}, std::numeric_limits<double>::quiet_NaN());
+    };
+    for (auto control : {mBeam, mLower, mUpper})
+        connect(control, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, invalidate);
+    layout->addStretch(); dock->setWidget(panel); addDockWidget(Qt::RightDockWidgetArea, dock);
+
+    auto tableDock = new QDockWidget(tr("Prescription (mm)"), this);
+    tableDock->setObjectName("prescriptionDock");
+    mTable = new QTableWidget(0, 5, tableDock);
+    mTable->setHorizontalHeaderLabels({tr("Radius"), tr("Thickness"), tr("Index"), tr("Abbe"), tr("Aperture")});
+    mTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    mTable->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    tableDock->setWidget(mTable); addDockWidget(Qt::BottomDockWidgetArea, tableDock);
+    auto viewMenu = menuBar()->addMenu(tr("&View"));
+    viewMenu->addAction(dock->toggleViewAction()); viewMenu->addAction(tableDock->toggleViewAction());
+    statusBar()->showMessage(tr("Ready — open a lens prescription"));
+}
+bool MainWindow::loadPrescription(const QString& path) {
     try {
-        QString fileName = QFileDialog::getOpenFileName(this,
-             tr("Open Lens Prescription"), "", tr("Lens Prescription Text File (*.txt)"));
-
-        if(fileName.isEmpty())
-           return;
-
-        qDebug() << "Opening " << fileName << "\n";
-        ui->textEditConsole->append(tr("Opening ") + fileName);
-        mLens.load(fileName);
-        mLensProfileView.loadLens(&mLens);  // call update so that lensprofileview displays the newly loaded lens
-        ui->statusBar->showMessage(tr("done"), 1000);
-
-        // TODO: Move this to some appropriate function that is tied to the user interface
-        mLensProfileView.clearRayBundles(); // clear previous ray bundles if any
-        mLensProfileView.setRayBundleDraw(true);
-        //mLensProfileView.addRayBundle(mLens.raytraceRayBundleBackToFront( glm::vec4(0.0f, 0.0f, mLens.thickness(), 1.0f), 4 ), Colorf(1.0f, 0.0f, 0.0f));
-//        mLensProfileView.addRayBundle(mLens.raytraceRayBundleBackToFront( glm::vec3(0.0f, 0.0f, 20 + mLens.thickness()), 3 ), Colorf(0.0f, 0.0f, 1.0f));
-        //mLensProfileView.addRayBundle(mLens.raytraceRayBundleFrontToBack( glm::vec4(0.0f, 0.0f, -mLens.thickness(), 1.0f), 4 ), Colorf(0.0f, 0.0f, 1.0f));
-//        mLensProfileView.addRayBundle(mLens.raytraceRayBundleFrontToBack( glm::vec4(0.0f, 0.0f, -mLens.thickness(), 0.0f), 4 ), Colorf(1.0f, 1.0f, 1.0f));
-//        glm::vec3 pt;
-////        mLensProfileView.addRayBundle(mLens.imagePoint( glm::vec4(0.0f, 0.0f, -1000.0f + mLens.thickness(), 1.0f), pt), Colorf(1.0f, 1.0f, 0.0f));
-////        qDebug() << "image coord: " << pt.x << ", " << pt.y << ", " << pt.z;
-
-//        mLensProfileView.addRayBundle(mLens.imagePoint( glm::vec4(0.0f, 0.0f, -mLens.thickness(), 0.0f), pt), Colorf(1.0f, 0.0f, 1.0f));
-//        qDebug() << "image coord: " << pt.x << ", " << pt.y << ", " << pt.z;
-//        mLensProfileView.addRayBundle(mLens.raytraceRayBundleFrontToBack( glm::vec3(0.0f, 0.0f, -2 * mLens.thickness()), 10 ), Colorf(0.0f, 1.0f, 0.0f));
-//        mLensProfileView.addRayBundle(mLens.raytraceRayBundleFrontToBack( glm::vec3(0.0f, 100.0f, -2 * mLens.thickness()), 10 ), Colorf(0.0f, 1.0f, 1.0f));
-        //mLensProfileView.addRayBundle(mLens.raytraceRayBundleIrisToBack( glm::vec4(0.0f, 16.0f, 0.0f, 1.0f), 4 ), Colorf(1.0f, 0.0f, 1.0f));
-        //mLensProfileView.addRayBundle(mLens.raytraceRayBundleIrisToFront( glm::vec4(0.0f, 16.0f, 0.0f, 1.0f), 2 ), Colorf(0.0f, 1.0f, 1.0f));
-
-        double zExitPupil, sizeExitPupil;
-        RayBundle topAp, bottomAp;
-        mLens.findExitPupil(zExitPupil, sizeExitPupil, topAp, bottomAp);
-        mLensProfileView.addRayBundle(topAp, Colorf(1.0f, 0.0, 0.0));
-        mLensProfileView.addRayBundle(bottomAp, Colorf(1.0f, 0.0, 0.0));
-
-        double zEntrancePupil, sizeEntrancePupil;
-        mLens.findEntrancePupil(zEntrancePupil, sizeEntrancePupil, topAp, bottomAp);
-        mLensProfileView.addRayBundle(topAp, Colorf(0.0f, 0.0, 1.0));
-        mLensProfileView.addRayBundle(bottomAp, Colorf(0.0f, 0.0, 1.0));
-
-        glm::vec3 frontFocus, backFocus;
-        double frontPP, backPP;
-        RayBundle bundle;
-        frontFocus = mLens.findFrontFocus(bundle, &frontPP);
-        mLensProfileView.addRayBundle(bundle, Colorf(0.0f, 1.0f, 0.0f));
-
-        qDebug() << "Front focus point : " << frontFocus.x << " , " << frontFocus.y << " , " << frontFocus.z;
-        qDebug() << "Front Principal Plane : " << frontPP;
-
-        stream << "\n\nSummary\n------------\n";
-        stream << "Front focus point : " << frontFocus.x << " , " << frontFocus.y << " , " << frontFocus.z << "\n";
-        stream << "Front Principal Plane (PP) : " << frontPP << "\n";
-        stream << "Front Focus Distance (from PP) : " << frontPP - frontFocus.z << "\n";
-        stream << "Entrance Pupil Position : " << zEntrancePupil << "\n";
-        stream << "Entrance Pupil Size     : " << sizeEntrancePupil << "\n";
-        stream << "Front Focus from EP : " << zEntrancePupil - frontFocus.z << "\n";
-
-        backFocus = mLens.findBackFocus(bundle, &backPP);
-        mLensProfileView.addRayBundle(bundle, Colorf(0.5f, 0.5f, 0.5f)); // Colorf(1.0f);
-
-        qDebug() << "Back focus point : " << backFocus.x << " , " << backFocus.y << " , " << backFocus.z;
-        qDebug() << "Back Principal Plane : " << backPP;
-
-        stream << "Back focus point : " << backFocus.x << " , " << backFocus.y << " , " << backFocus.z << "\n";
-        stream << "Back Principal Plane (PP'): " << backPP << "\n";
-        stream << "Back Focus Distance (from PP') : " << backFocus.z - backPP << "\n";
-        stream << "Exit Pupil Position  : " << zExitPupil << "\n";
-        stream << "Exit Pupil Size      : " << sizeExitPupil << "\n";
-        stream << "Back Focus from Exit Pupil : " << backFocus.z - zExitPupil << "\n";
-        stream << "\n\n";
-        stream << "First set of points (-1000, 10, 5)\n";
-        auto pts = mLens.imagePlanarGridPoints1D(-1000, 10, 5);
-        stream << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z << "\n";
-        qDebug() << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z;
-        for(auto it = pts.begin(); it != pts.end(); it++) {
-            stream << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")\n";
-            qDebug() << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")";
+        mLens.load(nativePath(path));
+        mView->loadLens(&mLens);
+        mTable->setRowCount(static_cast<int>(mLens.surfaceCount()));
+        int row = 0;
+        for (auto it = mLens.cbegin(); it != mLens.cend(); ++it, ++row) {
+            const double values[] = {it->radius(), it->thickness(), it->nd(), it->Vno(), it->aperture()};
+            for (int column = 0; column < 5; ++column)
+                mTable->setItem(row, column, new QTableWidgetItem(std::isnan(values[column]) ? "—" : QString::number(values[column], 'g', 8)));
         }
-        stream << "\n\nSecond set of points (-919.1883, 10, 5)\n";
-        pts = mLens.imagePlanarGridPoints1D(-919.1883, 10, 5);
-        stream << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z << "\n";
-        qDebug() << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z;
-        for(auto it = pts.begin(); it != pts.end(); it++) {
-            stream << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")\n";
-            qDebug() << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")";
-        }
-
-        stream << "\n\nThird set of points (-843.5500, 10, 5)\n";
-        pts = mLens.imagePlanarGridPoints1D(-843.5500, 10, 5);
-        stream << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z << "\n";
-        qDebug() << "z : " << pts.begin()->first.z << " -> " << pts.begin()->second.z;
-        for(auto it = pts.begin(); it != pts.end(); it++) {
-            stream << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")\n";
-            qDebug() << "(" << it->first.z << ", " << it->first.y << ") -> (" << it->second.z << ", " << it->second.y << ")";
-        }
-        ui->textEditConsole->append(QString::fromStdString(stream.str()));
-    } catch(const std::exception& e) {
-        ui->statusBar->showMessage(tr("Unable to open file"), 2000);
-        qCritical() << e.what();
-        ui->textEditConsole->append(tr("Unable to open file"));
-        ui->textEditConsole->append(e.what());
+        mBeam->setMaximum(mLens.cbegin()->aperture());
+        mBeam->setValue(std::min(2.0, mLens.cbegin()->aperture()));
+        const auto& last = *(mLens.cend() - 1);
+        mLower->setValue(0); mUpper->setValue(std::max(200.0, last.thickness() * 3));
+        mAnalyze->setEnabled(true);
+        setWindowTitle(tr("%1 — Lens Simulator").arg(QFileInfo(path).fileName()));
+        analyze(); // Loading succeeds even when the selected system has no forward focus.
+        return true;
+    } catch (const std::exception& e) {
+        statusBar()->showMessage(tr("Unable to load: %1").arg(QString::fromUtf8(e.what())));
+        return false;
     }
 }
-
-void MainWindow::wheelEvent(QWheelEvent  *event)
-{
-//    qDebug() << event->pixelDelta();
-//    qDebug() << event->angleDelta();
-//    qDebug() << event->orientation();
-//    qDebug() << event->pos();
-//    qDebug() << event->globalPos();
-    if(event->angleDelta().y() > 0)
-        mLensProfileView.zoomIn();
-    else
-        mLensProfileView.zoomOut();
-}
-
-void MainWindow::mouseMoveEvent(QMouseEvent *event)
-{
-    //qDebug() << event->button();
-    if(mBoolPanningState) {
-        QPoint cPos = event->pos();
-        QPoint diff = cPos - mPanLastPos;
-//        qDebug() << cPos;
-//        qDebug() << event->x() << " " << event->y();
-//        qDebug() << diff;
-        mLensProfileView.pan(diff.x(), -diff.y());
-        mPanLastPos = cPos;
+bool MainWindow::analyze() {
+    try {
+        const auto result = optics::analyze_lens(mLens, mBeam->value() * 1e-3,
+            mLower->value() * 1e-3, mUpper->value() * 1e-3);
+        mView->setRays(result.paths, (result.last_surface_m + result.focus.parameter) * 1e3);
+        QString text = tr("Transmitted rays: %1 / %2\nPrescribed sensor distance: %3 mm\nSensor RMS: %4 µm\n\nOptimized distance: %5 mm\nOptimized RMS: %6 µm")
+            .arg(static_cast<unsigned>(result.outgoing.size())).arg(result.launched)
+            .arg(result.sensor_distance_m * 1e3, 0, 'f', 4).arg(result.sensor_rms_m * 1e6, 0, 'g', 6)
+            .arg(result.focus.parameter * 1e3, 0, 'f', 4).arg(result.focus.value * 1e6, 0, 'g', 6);
+        if (result.at_bound) text += tr("\n\nBest plane is at a search bound; adjust bounds to investigate focus.");
+        mResults->setText(text); statusBar()->showMessage(tr("Focus analysis complete")); return true;
+    } catch (const std::exception& e) {
+        mView->setRays({}, std::numeric_limits<double>::quiet_NaN());
+        mResults->setText(tr("Analysis unavailable: %1").arg(QString::fromUtf8(e.what())));
+        statusBar()->showMessage(tr("Focus analysis unavailable")); return false;
     }
 }
-
-void MainWindow::mousePressEvent(QMouseEvent *event)
-{
-    if(event->button() == Qt::MiddleButton) {
-        mPanLastPos = event->pos();
-        mBoolPanningState = true;
-        //qDebug() << "drag start ... " << mPanLastPos;
-    }
-}
-
-void MainWindow::mouseReleaseEvent(QMouseEvent *event)
-{
-    if(event->button() == Qt::MiddleButton) {
-        mPanLastPos = event->pos();
-        mBoolPanningState = false;
-        //qDebug() << "drag stopped. " << mPanLastPos;
-    }
-}
-
-void MainWindow::on_action_Editor_toggled(bool arg1)
-{
-    qDebug() << arg1;
-    if(arg1) {
-        ui->dockWidgetEditorView->show();
-    } else {
-        ui->dockWidgetEditorView->hide();
-    }
-}
-
-void MainWindow::on_action_Console_toggled(bool arg1)
-{
-    if(arg1) {
-        ui->dockWidgetConsole->show();
-        ui->dockWidgetConsole->dockLocationChanged(Qt::BottomDockWidgetArea);
-    } else {
-        ui->dockWidgetConsole->hide();
-    }
-}
-
-void MainWindow::consoleClose(QCloseEvent *event)
-{
-    qDebug() << "consoleClose";
-    ui->action_Console->setChecked(false);
+bool MainWindow::exportSvg(const QString& path) {
+    if (mLens.empty()) { statusBar()->showMessage(tr("Load a lens before exporting")); return false; }
+    QSvgGenerator generator; generator.setFileName(path);
+    generator.setSize(mView->size()); generator.setViewBox(mView->rect());
+    generator.setTitle(tr("Lens Simulator — lens and focus analysis"));
+    QPainter painter;
+    if (!painter.begin(&generator)) { statusBar()->showMessage(tr("Unable to write SVG")); return false; }
+    mView->paint(painter); painter.end(); statusBar()->showMessage(tr("SVG exported")); return true;
 }

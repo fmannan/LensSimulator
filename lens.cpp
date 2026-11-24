@@ -1,7 +1,7 @@
 #include "lens.h"
-#include <QFile>
-#include <QString>
-#include <QTextStream>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <exception>
 #include <stdexcept>
 #include <iostream>
@@ -13,13 +13,13 @@
 #include <ray.h>
 #include <utility.h>
 #include <sphere.h>
-#include <QDebug>
 
 Lens::Lens()
 {
+    init();
 }
 
-Lens::Lens(const QString &filename)
+Lens::Lens(const std::filesystem::path &filename)
 {
     load(filename);
 }
@@ -31,51 +31,65 @@ void Lens::init()
     mIdxApertureStop = -1;
 }
 
-void Lens::load(const QString &filename)
+void Lens::load(const std::filesystem::path& filename)
 {
-    QFile file(filename);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        throw std::runtime_error("Unable to open file");
-        return;
+    std::ifstream input(filename);
+    if (!input) throw std::runtime_error("Unable to open lens prescription");
+    load(input);
+}
+
+void Lens::load(std::istream& input)
+{
+    // Parse transactionally: malformed input must not discard the current lens.
+    LensPrescription parsed;
+    double offset = 0;
+    int stop = -1;
+    std::string line;
+    unsigned lineNumber = 0;
+    while (std::getline(input, line)) {
+        ++lineNumber;
+        if (lineNumber == 1 && line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);
+        const auto start = line.find_first_not_of(" \t\r");
+        if (start == std::string::npos || line[start] == '#') continue;
+        try {
+            std::vector<double> values;
+            std::size_t begin = 0;
+            do {
+                const auto end = line.find(',', begin);
+                const auto token = line.substr(begin, end == std::string::npos ? end : end - begin);
+                double value = std::numeric_limits<double>::quiet_NaN();
+                if (token.find_first_not_of(" \t\r") != std::string::npos) {
+                    std::size_t used = 0;
+                    value = std::stod(token, &used);
+                    if (token.find_first_not_of(" \t\r", used) != std::string::npos)
+                        throw std::runtime_error("invalid number");
+                }
+                values.push_back(value);
+                if (end == std::string::npos) break;
+                begin = end + 1;
+            } while (true);
+            if (values.size() != 5) throw std::runtime_error("expected five comma-separated columns");
+            if (!std::isfinite(values[1]) || values[1] < 0 ||
+                !std::isfinite(values[4]) || values[4] <= 0)
+                throw std::runtime_error("thickness must be nonnegative and aperture positive");
+            if (!std::isnan(values[2]) && (!std::isfinite(values[2]) || values[2] <= 0))
+                throw std::runtime_error("refractive index must be positive or nan (air)");
+            if (!std::isnan(values[0]) && (values[0] == 0 ||
+                (std::isfinite(values[0]) && values[4] > 2 * std::abs(values[0]))))
+                throw std::runtime_error("radius must be nonzero and accommodate the aperture");
+            if (!std::isfinite(offset + values[1])) throw std::runtime_error("prescription too long");
+            parsed.emplace_back(values, static_cast<float>(offset));
+            if (parsed.back().isAperture()) stop = static_cast<int>(parsed.size()) - 1;
+            offset += values[1];
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Prescription line " + std::to_string(lineNumber) + ": " + e.what());
+        }
     }
-
-    init(); // clear all previous data
-
-    QTextStream in(&file);
-    QTextStream out(stdout);
-
-    double elemOffset = 0.0;
-    int idx = 0;
-    while (!in.atEnd()) {
-        QString line = in.readLine();
-        //std::cout << line << std::endl;
-        //qDebug() << line;
-        //out << line << "\n";
-        if(line.isEmpty()) continue;
-        if(line.at(0) == '#') // skip comments
-            continue;
-        QStringList param_list = line.split(",");
-        double params[5] = {0};
-
-        std::transform(param_list.cbegin(), param_list.cend(), params,
-                       [](QString data)
-                        { if(data.isEmpty())
-                            return std::numeric_limits<double>::quiet_NaN();
-                          return data.toDouble();
-                        });
-        std::for_each(params, params + 5, [&out](double v) { out << v << " ";});
-        out << "\n";
-
-        mElems.push_back(LensElement(params, elemOffset));
-        if(mElems.back().isAperture())
-            mIdxApertureStop = idx;
-        idx++;
-
-        elemOffset += mElems.back().thickness();
-    }
-    // first edge starts from 0. lens thickness is the front to back edge distance
-    // the back edge is the sensor
-    mLensThickness = elemOffset;
+    if (input.bad()) throw std::runtime_error("Unable to read lens prescription");
+    if (parsed.empty()) throw std::runtime_error("Prescription has no surfaces");
+    mElems = std::move(parsed);
+    mIdxApertureStop = stop;
+    mLensThickness = offset;
 }
 
 void Lens::findExitPupil(double &zPos, double& aperture)
@@ -91,15 +105,13 @@ void Lens::findExitPupil(double &zPos, double& aperture, RayBundle& topRayBundle
     // ray tracing is performed from iris to back
     glm::vec3 aperture_stop_pos = mElems[mIdxApertureStop].edgePos();
     glm::vec3 pt = aperture_stop_pos;
-    pt.y = mElems[mIdxApertureStop].aperture()/2.0;
+    pt.y = static_cast<float>(mElems[mIdxApertureStop].aperture()/2.0);
 
-    qDebug() << "top : " << pt.x << " , " << pt.y << " , " << pt.z;
 
     glm::vec3 ptTop, ptBottom;
     topRayBundles = raytraceRayBundleIrisToBack(glm::vec4(pt, 1.0f), 10);
     intersectionRayBundle(topRayBundles, ptTop, int(mElems.size()) - mIdxApertureStop);
 
-    qDebug() << "img top : " << ptTop.x << " , " << ptTop.y << " , " << ptTop.z;
 
     pt.y = -pt.y;
     bottomRayBundles = raytraceRayBundleIrisToBack(glm::vec4(pt, 1.0f), 10);
@@ -108,11 +120,7 @@ void Lens::findExitPupil(double &zPos, double& aperture, RayBundle& topRayBundle
     zPos = ptTop.z;
     aperture = std::abs(ptTop.y - ptBottom.y);
 
-    qDebug() << "bottom : " << pt.x << " , " << pt.y << " , " << pt.z;
-    qDebug() << "img bottom : " << ptBottom.x << " , " << ptBottom.y << " , " << ptBottom.z;
 
-    qDebug() << "Exit Pupil z : " << zPos;
-    qDebug() << "Exit Pupil size : " << aperture;
 }
 
 void Lens::findEntrancePupil(double &zPos, double& aperture)
@@ -127,15 +135,13 @@ void Lens::findEntrancePupil(double &zPos, double& aperture, RayBundle& topRayBu
     // ray tracing is performed from iris to back
     glm::vec3 aperture_stop_pos = mElems[mIdxApertureStop].edgePos();
     glm::vec3 pt = aperture_stop_pos;
-    pt.y = mElems[mIdxApertureStop].aperture()/2.0;
+    pt.y = static_cast<float>(mElems[mIdxApertureStop].aperture()/2.0);
 
-    qDebug() << "top : " << pt.x << " , " << pt.y << " , " << pt.z;
 
     glm::vec3 ptTop, ptBottom;
     topRayBundles = raytraceRayBundleIrisToFront(glm::vec4(pt, 1.0f), 10);
     intersectionRayBundle(topRayBundles, ptTop, mIdxApertureStop + 1);
 
-    qDebug() << "img top : " << ptTop.x << " , " << ptTop.y << " , " << ptTop.z;
 
     pt.y = -pt.y;
     bottomRayBundles = raytraceRayBundleIrisToFront(glm::vec4(pt, 1.0f), 10);
@@ -144,11 +150,7 @@ void Lens::findEntrancePupil(double &zPos, double& aperture, RayBundle& topRayBu
     zPos = ptTop.z;
     aperture = std::abs(ptTop.y - ptBottom.y);
 
-    qDebug() << "bottom : " << pt.x << " , " << pt.y << " , " << pt.z;
-    qDebug() << "img bottom : " << ptBottom.x << " , " << ptBottom.y << " , " << ptBottom.z;
 
-    qDebug() << "Entrance Pupil z : " << zPos;
-    qDebug() << "Entrance Pupil size : " << aperture;
 }
 
 glm::vec3 Lens::findFrontFocus(RayBundle &bundle, double* zPrincipalPlane)
@@ -162,7 +164,6 @@ glm::vec3 Lens::findFrontFocus(RayBundle &bundle, double* zPrincipalPlane)
                 glm::vec3 pt;
                 if(it->begin()->intersection(it->back(), pt) == Ray::RAY_INTERSECTION) {
                     *zPrincipalPlane = pt.z;
-                    qDebug() << "object side principal plane : " << pt.x << ", " << pt.y << ", " << pt.z;
                 }
                 break;
             }
@@ -182,7 +183,6 @@ glm::vec3 Lens::findBackFocus(RayBundle &bundle, double *zPrincipalPlane)
                 glm::vec3 pt;
                 if(it->begin()->intersection(it->back(), pt) == Ray::RAY_INTERSECTION) {
                     *zPrincipalPlane = pt.z;
-                    qDebug() << "image side principal plane : " << pt.x << ", " << pt.y << ", " << pt.z;
                 }
                 break;
             }
@@ -211,7 +211,7 @@ RayBundle Lens::imagePoint(const glm::vec4 &pt, glm::vec3 &ptImg) const
     } else {
         res = raytraceRayBundleBackToFront(pt, 10);
     }
-    intersectionRayBundle(res, ptImg, mElems.size() + 1);
+    intersectionRayBundle(res, ptImg, static_cast<int>(mElems.size()) + 1);
 
     return res;
 }
@@ -237,7 +237,6 @@ bool Lens::intersectionRayBundle(RayBundle &bundle, glm::vec3 &intersection_poin
     int idx = 0;
     //for(auto it = bundle.begin(); it != bundle.end(); it++) {
     for(auto& e : bundle) {
-        //qDebug() << "size : " << it->size();
         if(e.size() >= nRayIntersections) {
             if(idx == 0) {
                 extremeRays[idx++] = e.back();
@@ -247,10 +246,6 @@ bool Lens::intersectionRayBundle(RayBundle &bundle, glm::vec3 &intersection_poin
         }
     }
     if(idx != 0) {
-//        qDebug() << "[0] " << extremeRays[0].origin().x << " , " << extremeRays[0].origin().y << " , " << extremeRays[0].origin().z;
-//        qDebug() << "[0] " << extremeRays[0].direction().x << " , " << extremeRays[0].direction().y << " , " << extremeRays[0].direction().z;
-//        qDebug() << "[1] " << extremeRays[1].origin().x << " , " << extremeRays[1].origin().y << " , " << extremeRays[1].origin().z;
-//        qDebug() << "[1] " << extremeRays[1].direction().x << " , " << extremeRays[1].direction().y << " , " << extremeRays[1].direction().z;
         if(extremeRays[0].intersection(extremeRays[1], intersection_point) == Ray::RAY_INTERSECTION) {
            //for(auto it = bundle.begin(); it != bundle.end(); it++) {
             for(auto& e: bundle) {
@@ -259,7 +254,6 @@ bool Lens::intersectionRayBundle(RayBundle &bundle, glm::vec3 &intersection_poin
                    // check if the final image point is in the same direction as the ray
                    glm::vec3 dir = intersection_point - cLast.origin();
                    glm::vec3 n = glm::cross(dir, cLast.direction());
-                   qDebug() << glm::dot(n, n);
                    //assert(std::abs(glm::dot(n, n)) < std::numeric_limits<float>::epsilon());
                    e.push_back(Ray(intersection_point, glm::vec3(0.0f)));
                    e.push_back(cLast);
@@ -306,14 +300,7 @@ RayPath Lens::raytraceEndToEnd(const Ray &ray_orig, const InputIt& begin, const 
 
                 bool bTIR = false;
                 glm::vec3 transmitted_ray = computeRefraction(ray.direction(), surface_normal, nd_curr, nd_next, &bTIR);
-                //qDebug() << bTIR ;
-                if(bTIR) {
-                    qDebug() << ray.direction().z << " " << ray.direction().y;
-                    qDebug() << surface_normal.z << " " << surface_normal.y;
-                    qDebug() << transmitted_ray.z << " " << transmitted_ray.y;
-                    qDebug() << "nd_curr " << nd_curr;
-                    qDebug() << "nd_next " << nd_next;
-                }
+                if(bTIR) break; // no transmitted ray in this sequential lens model
                 ray.setParams(surface_pos, transmitted_ray); // update the ray
             }
             raypath.push_back(ray);
@@ -477,8 +464,14 @@ bool LensElement::intersectionSphericalLens(const Ray& ray, glm::vec3& pos, glm:
 std::vector<glm::vec3> LensElement::samplesYZPlaneIntersection(int nSamples) const
 {
     std::vector<glm::vec3> samples;
+    if (nSamples < 1) throw std::invalid_argument("positive sample count required");
 
     const glm::vec3 pos = edgePos();
+    if (!std::isfinite(radius())) {
+        for (int i = -nSamples; i <= nSamples; ++i)
+            samples.emplace_back(pos.x, float(pos.y + i * aperture() / (2 * nSamples)), pos.z);
+        return samples;
+    }
     double half_angle = asin(aperture() / (2.0 * radius()));
     double part = half_angle / nSamples; //twicePi / slices;
 
@@ -491,15 +484,15 @@ std::vector<glm::vec3> LensElement::samplesYZPlaneIntersection(int nSamples) con
 
 bool LensElement::intersectionAperture(const Ray &ray, glm::vec3 &pos, glm::vec3 &normal) const
 {
-    Plane plane(mCenter, glm::vec3(0, 0, ray.origin().z - mCenter.z));
-    plane.intersection(ray, pos, normal);
+    Plane plane(mEdgePos, glm::vec3(0, 0, ray.direction().z > 0 ? -1 : 1));
+    if (!plane.intersection(ray, pos, normal)) return false;
     glm::vec3 u = pos - mCenter;
     return !(glm::dot(u, u) > SQR(mAperture/2.0));
 }
 
 bool LensElement::intersection(const Ray &ray, glm::vec3 &pos, glm::vec3 &normal) const
 {
-    if(isAperture())
+    if(!std::isfinite(mRadius))
         return intersectionAperture(ray, pos, normal);
     return intersectionSphericalLens(ray, pos, normal);
 }
